@@ -1,0 +1,50 @@
+name: daily-digest
+
+on:
+  schedule:
+    - cron: '0 18 * * *'    # 23:30 IST main run
+    - cron: '0 19 * * *'    # 00:30 IST backup run (skips if already done)
+  workflow_dispatch:
+    inputs:
+      date:
+        description: 'Digest date YYYY-MM-DD (optional)'
+        required: false
+      force:
+        description: 'Rebuild even if ready (true/false)'
+        required: false
+        default: 'false'
+
+concurrency:
+  group: daily-digest
+  cancel-in-progress: false
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+      - run: npm ci
+      - name: Run pipeline
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          GEMINI_MODEL: ${{ vars.GEMINI_MODEL }}
+          TTS_VOICE: ${{ vars.TTS_VOICE }}
+          SCRAPER_USER_AGENT: ${{ vars.SCRAPER_USER_AGENT }}
+          LOG_LEVEL: info
+        run: |
+          ARGS=""
+          if [ -n "${{ github.event.inputs.date }}" ]; then ARGS="$ARGS --date=${{ github.event.inputs.date }}"; fi
+          if [ "${{ github.event.inputs.force }}" = "true" ]; then ARGS="$ARGS --force"; fi
+          node src/pipeline/run.js $ARGS
